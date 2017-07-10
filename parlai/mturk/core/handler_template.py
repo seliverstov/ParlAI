@@ -203,3 +203,5 @@ def get_hit_index_and_assignment_index(event, context):
         except KeyError:
             raise Exception('400')
 
+def ping(event, context):
+    return json.dumps({'result': 'success'})

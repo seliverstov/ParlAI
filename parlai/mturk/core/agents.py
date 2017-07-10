@@ -42,8 +42,7 @@ debug = True
 
 class MTurkManager():
     def __init__(self, opt, mturk_agent_ids, all_agent_ids):
-        self.html_api_endpoint_url = None
-        self.json_api_endpoint_url = None
+        self.api_endpoint_dict = None
         self.task_group_id = None
         self.db_last_message_id = 0
         self.db_thread = None
@@ -76,11 +75,10 @@ class MTurkManager():
         for mturk_agent_id in self.mturk_agent_ids:
             self.task_files_to_copy.append(os.path.join(task_directory_path, 'html', mturk_agent_id+'_cover_page.html'))
             self.task_files_to_copy.append(os.path.join(task_directory_path, 'html', mturk_agent_id+'_index.html'))
-        html_api_endpoint_url, json_api_endpoint_url = setup_aws(task_files_to_copy = self.task_files_to_copy)
-        self.html_api_endpoint_url = html_api_endpoint_url
-        self.json_api_endpoint_url = json_api_endpoint_url
+        api_endpoint_dict = setup_aws(task_files_to_copy = self.task_files_to_copy, max_connections = opt['num_hits']*opt['num_assignments'])
+        self.api_endpoint_dict = api_endpoint_dict
         if debug:
-            print(self.json_api_endpoint_url)
+            print(self.api_endpoint_dict)
         print("MTurk setup done.\n")
 
         self.task_group_id = str(opt['task']) + '_' + str(self.run_id)
@@ -117,7 +115,7 @@ class MTurkManager():
             'task_group_id': self.task_group_id,
             'last_message_id': self.db_last_message_id,
         }
-        response = requests.get(self.json_api_endpoint_url, params=params)
+        response = requests.get(self.api_endpoint_dict[0]['json_api_endpoint_url'], params=params)
         try:
             ret = json.loads(response.json())
         except Exception as e:
@@ -178,7 +176,7 @@ class MTurkManager():
                     'method_name': 'send_new_messages_in_bulk',
                     'new_messages': self.unsent_messages,
                 }
-                response = requests.post(self.json_api_endpoint_url, data=json.dumps(post_data_dict))
+                response = requests.post(self.api_endpoint_dict[0]['json_api_endpoint_url'], data=json.dumps(post_data_dict))
                 if response.status_code != 200:
                     print(response.content)
                     raise Exception
@@ -206,7 +204,7 @@ class MTurkManager():
                         is_sandbox=opt['is_sandbox']
                     )
                 all_agent_ids_string = str(self.all_agent_ids).replace("'", '''"''')
-                mturk_chat_url = self.html_api_endpoint_url + "?method_name=chat_index&task_group_id="+str(self.task_group_id)+"&all_agent_ids="+all_agent_ids_string+"&cur_agent_id="+str(mturk_agent_id)
+                mturk_chat_url = self.api_endpoint_dict[0]['html_api_endpoint_url'] + "?method_name=chat_index&task_group_id="+str(self.task_group_id)+"&all_agent_ids="+all_agent_ids_string+"&cur_agent_id="+str(mturk_agent_id)
                 mturk_page_url = create_hit_with_hit_type(
                     page_url=mturk_chat_url,
                     hit_type_id=hit_type_id,

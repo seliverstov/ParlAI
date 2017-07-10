@@ -15,6 +15,7 @@ import json
 import webbrowser
 import hashlib
 import getpass
+import math
 from botocore.exceptions import ClientError
 from botocore.exceptions import ProfileNotFound
 from parlai.mturk.core.data_model import setup_database_engine, init_database, check_database_health
@@ -26,7 +27,7 @@ user_name = getpass.getuser()
 iam_role_name = 'parlai_relay_server'
 lambda_function_name = 'parlai_relay_server_' + user_name
 lambda_permission_statement_id = 'lambda-permission-statement-id'
-api_gateway_name = 'ParlaiRelayServer_' + user_name
+api_gateway_prefix = 'ParlaiRelayServer_' + user_name + '_'
 endpoint_api_name_html = 'html'  # For GET-ing HTML
 endpoint_api_name_json = 'json'  # For GET-ing and POST-ing JSON
 
@@ -317,7 +318,105 @@ def create_hit_config(task_description, num_hits, num_assignments, is_sandbox):
     with open(hit_config_file_path, 'w') as hit_config_file:
         hit_config_file.write(json.dumps(hit_config))
 
-def setup_relay_server_api(rds_host, task_files_to_copy, should_clean_up_after_upload=True):
+def create_api_gateway(api_gateway_name, lambda_function_arn):
+    # Check API Gateway existence.
+    # If doesn't exist, create the APIs, point them to Lambda function, and set correct configurations
+    api_gateway_exists = False
+    rest_api_id = None
+    api_gateway_client = boto3.client('apigateway', region_name=region_name)
+    response = api_gateway_client.get_rest_apis()
+    if not 'items' in response:
+        api_gateway_exists = False
+    else:
+        rest_apis = response['items']
+        for api in rest_apis:
+            if api['name'] == api_gateway_name:
+                api_gateway_exists = True
+                rest_api_id = api['id']
+                break
+    if not api_gateway_exists:
+        rest_api = api_gateway_client.create_rest_api(
+            name = api_gateway_name,
+        )
+        rest_api_id = rest_api['id']
+
+    # Create endpoint resources if doesn't exist
+    html_endpoint_exists = False
+    json_endpoint_exists = False
+    root_endpoint_id = None
+    response = api_gateway_client.get_resources(restApiId=rest_api_id)
+    resources = response['items']
+    for resource in resources:
+        if resource['path'] == '/':
+            root_endpoint_id = resource['id']
+        elif resource['path'] == '/' + endpoint_api_name_html:
+            html_endpoint_exists = True
+        elif resource['path'] == '/' + endpoint_api_name_json:
+            json_endpoint_exists = True
+
+    if not html_endpoint_exists:
+        print("API Gateway: Creating endpoint for html for "+api_gateway_name+"...")
+        resource_for_html_endpoint = api_gateway_client.create_resource(
+            restApiId = rest_api_id,
+            parentId = root_endpoint_id,
+            pathPart = endpoint_api_name_html
+        )
+
+        # Set up GET method
+        add_api_gateway_method(
+            api_gateway_client = api_gateway_client,
+            lambda_function_arn = lambda_function_arn,
+            rest_api_id = rest_api_id,
+            endpoint_resource = resource_for_html_endpoint,
+            http_method_type = 'GET',
+            response_data_type = 'html'
+        )
+    else:
+        print("API Gateway: Endpoint for html already exists for "+api_gateway_name+".")
+
+    if not json_endpoint_exists:
+        print("API Gateway: Creating endpoint for json for "+api_gateway_name+"...")
+        resource_for_json_endpoint = api_gateway_client.create_resource(
+            restApiId = rest_api_id,
+            parentId = root_endpoint_id,
+            pathPart = endpoint_api_name_json
+        )
+
+        # Set up GET method
+        add_api_gateway_method(
+            api_gateway_client = api_gateway_client,
+            lambda_function_arn = lambda_function_arn,
+            rest_api_id = rest_api_id,
+            endpoint_resource = resource_for_json_endpoint,
+            http_method_type = 'GET',
+            response_data_type = 'json'
+        )
+
+        # Set up POST method
+        add_api_gateway_method(
+            api_gateway_client = api_gateway_client,
+            lambda_function_arn = lambda_function_arn,
+            rest_api_id = rest_api_id,
+            endpoint_resource = resource_for_json_endpoint,
+            http_method_type = 'POST',
+            response_data_type = 'json'
+        )
+    else:
+        print("API Gateway: Endpoint for json already exists for "+api_gateway_name+".")
+
+    if not (html_endpoint_exists and json_endpoint_exists):
+        api_gateway_client.create_deployment(
+            restApiId = rest_api_id,
+            stageName = "prod",
+            cacheClusterEnabled = False,
+        )
+
+    html_api_endpoint_url = 'https://' + rest_api_id + '.execute-api.' + region_name + '.amazonaws.com/prod/' + endpoint_api_name_html
+    json_api_endpoint_url = 'https://' + rest_api_id + '.execute-api.' + region_name + '.amazonaws.com/prod/' + endpoint_api_name_json
+
+    return html_api_endpoint_url, json_api_endpoint_url
+
+def setup_relay_server_api(rds_host, task_files_to_copy, max_connections, should_clean_up_after_upload=True):
     # Dynamically generate handler.py file, and then create zip file
     print("Lambda: Preparing relay server code...")
 
@@ -426,102 +525,17 @@ def setup_relay_server_api(rds_host, task_files_to_copy, should_clean_up_after_u
         os.remove(os.path.join(parent_dir, lambda_server_zip_file_name))
         os.remove(os.path.join(parent_dir, 'hit_config.json'))
 
-    # Check API Gateway existence.
-    # If doesn't exist, create the APIs, point them to Lambda function, and set correct configurations
-    api_gateway_exists = False
-    rest_api_id = None
-    api_gateway_client = boto3.client('apigateway', region_name=region_name)
-    response = api_gateway_client.get_rest_apis()
-    if not 'items' in response:
-        api_gateway_exists = False
-    else:
-        rest_apis = response['items']
-        for api in rest_apis:
-            if api['name'] == api_gateway_name:
-                api_gateway_exists = True
-                rest_api_id = api['id']
-                break
-    if not api_gateway_exists:
-        rest_api = api_gateway_client.create_rest_api(
-            name = api_gateway_name,
-        )
-        rest_api_id = rest_api['id']
-
-    # Create endpoint resources if doesn't exist
-    html_endpoint_exists = False
-    json_endpoint_exists = False
-    root_endpoint_id = None
-    response = api_gateway_client.get_resources(restApiId=rest_api_id)
-    resources = response['items']
-    for resource in resources:
-        if resource['path'] == '/':
-            root_endpoint_id = resource['id']
-        elif resource['path'] == '/' + endpoint_api_name_html:
-            html_endpoint_exists = True
-        elif resource['path'] == '/' + endpoint_api_name_json:
-            json_endpoint_exists = True
-
-    if not html_endpoint_exists:
-        print("API Gateway: Creating endpoint for html...")
-        resource_for_html_endpoint = api_gateway_client.create_resource(
-            restApiId = rest_api_id,
-            parentId = root_endpoint_id,
-            pathPart = endpoint_api_name_html
-        )
-
-        # Set up GET method
-        add_api_gateway_method(
-            api_gateway_client = api_gateway_client,
-            lambda_function_arn = lambda_function_arn,
-            rest_api_id = rest_api_id,
-            endpoint_resource = resource_for_html_endpoint,
-            http_method_type = 'GET',
-            response_data_type = 'html'
-        )
-    else:
-        print("API Gateway: Endpoint for html already exists.")
-
-    if not json_endpoint_exists:
-        print("API Gateway: Creating endpoint for json...")
-        resource_for_json_endpoint = api_gateway_client.create_resource(
-            restApiId = rest_api_id,
-            parentId = root_endpoint_id,
-            pathPart = endpoint_api_name_json
-        )
-
-        # Set up GET method
-        add_api_gateway_method(
-            api_gateway_client = api_gateway_client,
-            lambda_function_arn = lambda_function_arn,
-            rest_api_id = rest_api_id,
-            endpoint_resource = resource_for_json_endpoint,
-            http_method_type = 'GET',
-            response_data_type = 'json'
-        )
-
-        # Set up POST method
-        add_api_gateway_method(
-            api_gateway_client = api_gateway_client,
-            lambda_function_arn = lambda_function_arn,
-            rest_api_id = rest_api_id,
-            endpoint_resource = resource_for_json_endpoint,
-            http_method_type = 'POST',
-            response_data_type = 'json'
-        )
-    else:
-        print("API Gateway: Endpoint for json already exists.")
-
-    if not (html_endpoint_exists and json_endpoint_exists):
-        api_gateway_client.create_deployment(
-            restApiId = rest_api_id,
-            stageName = "prod",
-            cacheClusterEnabled = False,
-        )
-
-    html_api_endpoint_url = 'https://' + rest_api_id + '.execute-api.' + region_name + '.amazonaws.com/prod/' + endpoint_api_name_html
-    json_api_endpoint_url = 'https://' + rest_api_id + '.execute-api.' + region_name + '.amazonaws.com/prod/' + endpoint_api_name_json
-
-    return html_api_endpoint_url, json_api_endpoint_url
+    num_api_gateways = math.ceil(max_connections/100) # 1 API Gateway will handle 100 concurrent clients
+    api_endpoint_dict = {}
+    for api_endpoint_index in range(num_api_gateways):
+        api_gateway_name = api_gateway_prefix + str(api_endpoint_index)
+        html_api_endpoint_url, json_api_endpoint_url = create_api_gateway(api_gateway_name=api_gateway_name, lambda_function_arn=lambda_function_arn)
+        api_endpoint_dict[api_endpoint_index] = {
+            'html_api_endpoint_url': html_api_endpoint_url,
+            'json_api_endpoint_url': json_api_endpoint_url,
+        }
+        time.sleep(5)
+    return api_endpoint_dict
 
 def check_mturk_balance(balance_needed, is_sandbox):
     client = boto3.client(
@@ -733,11 +747,11 @@ def create_zip_file(lambda_server_directory_name, lambda_server_zip_file_name, f
     if verbose:
         print("Done!")
 
-def setup_aws(task_files_to_copy):
+def setup_aws(task_files_to_copy, max_connections):
     rds_host = setup_rds()
-    html_api_endpoint_url, json_api_endpoint_url = setup_relay_server_api(rds_host=rds_host, task_files_to_copy=task_files_to_copy)
+    api_endpoint_dict = setup_relay_server_api(rds_host=rds_host, task_files_to_copy=task_files_to_copy, max_connections=max_connections)
 
-    return html_api_endpoint_url, json_api_endpoint_url
+    return api_endpoint_dict
 
 def clean_aws():
     # Remove RDS database
@@ -785,6 +799,7 @@ def clean_aws():
         print("RDS: Security group doesn't exist.")
 
     # Remove API Gateway endpoints
+    # TODO
     api_gateway_client = boto3.client('apigateway', region_name=region_name)
     api_gateway_exists = False
     rest_api_id = None
