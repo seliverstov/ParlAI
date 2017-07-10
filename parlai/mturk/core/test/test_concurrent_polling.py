@@ -39,7 +39,7 @@ def test_thread(thread_id):
             'task_group_id': task_group_id,
             'last_message_id': db_last_message_id,
         }
-        response = requests.get(api_endpoint_dict[thread_id % 5]['json_api_endpoint_url'], params=params, allow_redirects=False, timeout=30)
+        response = requests.get(api_endpoint_dict[thread_id % len(api_endpoint_dict)]['json_api_endpoint_url'], params=params, allow_redirects=False, timeout=30)
         try:
             ret = json.loads(response.json())
             avg_elapsed = (avg_elapsed * (count - 1) + response.elapsed.total_seconds()) / count
