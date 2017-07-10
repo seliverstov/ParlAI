@@ -4,7 +4,7 @@
 # LICENSE file in the root directory of this source tree. An additional grant
 # of patent rights can be found in the PATENTS file in the same directory.
 """
-You should run this test in clusters where there is less limitation on the number of outbound requests per second.
+You should run this test in clusters where there is more computing capacity.
 """
 import requests
 import json
@@ -30,7 +30,7 @@ def test_thread(thread_id):
             'task_group_id': task_group_id,
             'last_message_id': db_last_message_id,
         }
-        response = requests.get(json_api_endpoint_url, params=params, allow_redirects=False)
+        response = requests.get(json_api_endpoint_url, params=params, allow_redirects=False, timeout=30)
         try:
             ret = json.loads(response.json())
             print("Thread "+str(thread_id)+": Count: "+str(count)+" Success: "+str(ret))
