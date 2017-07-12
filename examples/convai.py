@@ -5,23 +5,31 @@
 # of patent rights can be found in the PATENTS file in the same directory.
 
 from parlai.core.params import ParlaiParser
-from parlai.agents.convai.convai_agent import ConvAIAgent
 from parlai.agents.local_human.local_human import LocalHumanAgent
-from parlai.core.worlds import DialogPartnerWorld
+from parlai.core.convai_world import ConvAIWorld
 
 
 def main():
     parser = ParlaiParser(True, True)
-    parser.add_argument('-n', '--num-examples', default=3)
+    parser.add_argument('-n', '--num-examples', default=5)
     parser.add_argument('-d', '--display-examples', type='bool', default=False)
     parser.add_argument('-bi', '--bot-id')
+    parser.add_argument('-bc', '--bot-capacity', default=-1)
     parser.add_argument('-rbu', '--router-bot-url')
+    parser.add_argument('-rbpd', '--router-bot-pull-delay', default=5)
     opt = parser.parse_args()
     print(opt)
-    # Create model and assign it to the specified task
-    remote_agent = ConvAIAgent(opt)
-    local_agent = LocalHumanAgent(opt)
-    world = DialogPartnerWorld(opt, [remote_agent, local_agent])
+
+    shared = {
+        'agents': [
+            {
+                'class': LocalHumanAgent,
+                'opt': opt
+            }
+        ]
+    }
+
+    world = ConvAIWorld(opt, None, shared)
 
     # Show some example dialogs:
     for k in range(int(opt['num_examples'])):
