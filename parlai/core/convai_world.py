@@ -4,10 +4,8 @@
 # LICENSE file in the root directory of this source tree. An additional grant
 # of patent rights can be found in the PATENTS file in the same directory.
 
-from parlai.core.worlds import World
-from parlai.core.agents import create_agent_from_shared
-from parlai.core.worlds import validate
-from parlai.core.agents import Agent
+from parlai.core.worlds import World, DialogPartnerWorld
+from parlai.core.agents import Agent, create_agent_from_shared
 
 import requests
 import os
@@ -27,8 +25,6 @@ class ConvAIWorld(World):
             raise RuntimeError("Agents should be provide via 'shared' parameter")
 
         self.shared = shared
-        self.agents = []
-        self.acts = []
         self.chats = {}
 
         self.router_bot_url = opt.get('router_bot_url')
@@ -101,10 +97,12 @@ class ConvAIWorld(World):
         return message.replace('/start ', '')
 
     def _init_chat(self, chat):
-        agent = create_agent_from_shared(self.shared["agents"][0])
-        self.chats[chat] = agent
-        print("New chat #%s created and corresponding agent added." % chat)
-        return agent
+        remote_agent = ConvAIAgent({'chat': chat})
+        local_agent = create_agent_from_shared(self.shared["agents"][0])
+        world = DialogPartnerWorld({'task': 'ConvAI Dialog'}, [remote_agent, local_agent])
+        self.chats[chat] = (remote_agent, local_agent, world)
+        print("New world and agents for chat #%s created." % chat)
+        return self.chats[chat]
 
     def _cleanup_chats(self, chats):
         for chat in chats:
@@ -114,13 +112,11 @@ class ConvAIWorld(World):
     def parley(self):
         print("\n"+"-" * 100+"\n")
         '''
-        Send new messages to agents
+        Pull new messages from server
         '''
         msgs = self._get_updates()
         active_chats = set()
         finished_chats = set()
-        acts = []
-        agents = []
         for msg in msgs:
             print("Proceed message: %s" % msg)
             text = self._get_message_text(msg)
@@ -132,6 +128,7 @@ class ConvAIWorld(World):
 
                 if self.chats.get(chat, None) is not None:
                     print("WARNING: Chat #%s already exists and it will be overwritten!")
+                    self.chats.get(chat)[2].shutdown()
                 else:
                     pass
 
@@ -147,47 +144,33 @@ class ConvAIWorld(World):
             else:
                 pass
 
-            agent = self.chats.get(chat, None)
+            (remote_agent, local_agent, world) = self.chats.get(chat, (None, None, None))
 
-            if agent is not None:
+            if remote_agent is not None and local_agent is not None and world is not None:
                 print("Message was recognized as part of chat #%s" % chat)
                 active_chats.add(chat)
-                stub_agent = StubConvAiAgent({'chat': chat})
-                m = {
-                    'id': stub_agent.id,
-                    'text': text,
-                    'episode_done': episode_done
-                }
-                print("Send new message from chat #%s to corresponding agent %s" % (chat, agent))
-                agent.observe(validate(m))
-                acts.append(m)
-                agents.append(stub_agent)
-            else:
-                print("Message wasn't recognized as part of any chat. Message skipped.")
-
-        '''
-        Collect responses from agents
-        '''
-        for chat in active_chats.difference(finished_chats):
-            agent = self.chats.get(chat, None)
-            if agent is not None:
-                act = validate(agent.act())
-
-                if self._is_end_of_conversation(act['text']) or act['episode_done']:
+                remote_agent.text = text
+                remote_agent.episode_done = episode_done
+                '''
+                Do message exchange between agents
+                '''
+                world.parley()
+                '''
+                Send response to server
+                '''
+                observation = remote_agent.observation
+                if self._is_end_of_conversation(observation['text']) or observation['episode_done']:
                     finished_chats.add(chat)
                 else:
                     pass
-
-                if self._is_skip_response(act['text']):
+                if self._is_skip_response(observation['text']):
                     print("Skip response from agent for conversation #%s" % chat)
                 else:
-                    print("Send response from agent for conversation #%s: %s" % (chat, act))
-                    self._send_message(act, chat)
-                    acts.append(act)
-                    agents.append(agent)
+                    print("Send response from agent for conversation #%s: %s" % (chat, observation))
+                    self._send_message(observation, chat)
+            else:
+                print("Message wasn't recognized as part of any chat. Message skipped.")
 
-        self.acts = acts
-        self.agents = agents
         '''
         Cleanup finished chats
         '''
@@ -198,25 +181,30 @@ class ConvAIWorld(World):
         print("Sleep for %s seconds before new round of conversation" % self.router_bot_pull_delay)
         time.sleep(self.router_bot_pull_delay)
 
-    def __len__(self):
-        return len(self.chats.values())
-
-    def __iter__(self):
-        return iter(self.chats.values())
-
     def shutdown(self):
-        for (chat, agent) in self.chats.items():
-            agent.shutdown()
+        for chat in self.chats.keys():
+            self.chats.pop(chat)[2].shutdown()
+
+    def get_chats(self):
+        return self.chats.keys()
+
+    def get_world(self, chat):
+        return self.chats[chat][2]
 
 
-class StubConvAiAgent(Agent):
+class ConvAIAgent(Agent):
     def __init__(self, opt, shared=None):
         super().__init__(opt, shared)
         self.id = "MasterBot#%s" % opt['chat']
+        self.text = None
+        self.observation = None
+        self.episode_done = False
 
     def act(self):
-        pass
+        return {
+            'id': self.id,
+            'text': self.text,
+            'episode_done': self.episode_done
+        }
 
-    def observe(self, observation):
-        pass
 
