@@ -25,7 +25,10 @@ class ConvAIWorld(World):
             raise RuntimeError("Agents should be provide via 'shared' parameter")
 
         self.shared = shared
+        self.chat = None
         self.chats = {}
+        self.finished_chats = set()
+        self.messages = []
 
         self.router_bot_url = opt.get('router_bot_url')
 
@@ -104,89 +107,101 @@ class ConvAIWorld(World):
         print("New world and agents for chat #%s created." % chat)
         return self.chats[chat]
 
-    def _cleanup_chats(self, chats):
-        for chat in chats:
-            self.chats.pop(chat, None)
+    def cleanup_finished_chat(self, chat):
+        if chat in self.finished_chats:
+            self.chats.pop(chat, None)[2].shutdown()
+            self.finished_chats.remove(chat)
             print("Chat #%s is ended and corresponding agent is removed." % chat)
+        else:
+            pass
+
+    def cleanup_finished_chats(self):
+        for chat in self.finished_chats.copy():
+            self.cleanup_finished_chat(chat)
+
+    def pull_new_messages(self):
+        while True:
+            print("Pull new messages from server")
+            msgs = self._get_updates()
+            if len(msgs) > 0:
+                for msg in msgs:
+                    print("Proceed message: %s" % msg)
+                    text = self._get_message_text(msg)
+                    chat = self._get_chat_id(msg)
+
+                    if self.chats.get(chat, None) is not None:
+                        print("Message recognized as part of chat #%s" % chat)
+                        self.messages.append((chat, text))
+                    elif self._is_begin_of_conversation(text):
+                        print("Message recognised as start of new conversation #%s" % chat)
+                        if self.bot_capacity == -1 or 0 <= self.bot_capacity > (len(self.chats) - len(self.finished_chats)):
+                            self._init_chat(chat)
+                            text = self._strip_start_message(text)
+                            self.messages.append((chat, text))
+                        else:
+                            print("Can't start new conversation #%s due to bot capacity limit reached." % chat)
+                    else:
+                        print("Message wasn't recognized as part of any chat. Message skipped.")
+                if len(self.messages) > 0:
+                    break
+            print("No new messages. Sleep for %s seconds before new try." % self.router_bot_pull_delay)
+            time.sleep(self.router_bot_pull_delay)
 
     def parley(self):
-        print("\n"+"-" * 100+"\n")
-        '''
-        Pull new messages from server
-        '''
-        msgs = self._get_updates()
-        active_chats = set()
-        finished_chats = set()
-        for msg in msgs:
-            print("Proceed message: %s" % msg)
-            text = self._get_message_text(msg)
-            chat = self._get_chat_id(msg)
-            episode_done = False
+        print("\n" + "-" * 100 + "\nParley\n"+"-"*100+"\n")
+        if len(self.messages) == 0:
+            self.pull_new_messages()
 
-            if self._is_begin_of_conversation(text):
-                print("Message recognised as start of new conversation #%s" % chat)
+        (chat, text) = self.messages.pop(0)
+        episode_done = self._is_end_of_conversation(text)
+        (remote_agent, local_agent, world) = self.chats.get(chat, (None, None, None))
 
-                if self.chats.get(chat, None) is not None:
-                    print("WARNING: Chat #%s already exists and it will be overwritten!")
-                    self.chats.get(chat)[2].shutdown()
-                else:
-                    pass
-
-                if self.bot_capacity == -1 or 0 <= self.bot_capacity > len(self.chats):
-                    self._init_chat(chat)
-                    text = self._strip_start_message(text)
-                else:
-                    print("Can't start new conversation #%s due to bot capacity limit reached." % chat)
-            elif self._is_end_of_conversation(text):
-                print("Message recognised as end of conversation #%s" % chat)
+        if remote_agent is not None and local_agent is not None and world is not None:
+            self.chat = chat
+            remote_agent.text = text
+            remote_agent.episode_done = episode_done
+            '''
+            Do message exchange between agents
+            '''
+            world.parley()
+            '''
+            Send response to server
+            '''
+            observation = remote_agent.observation
+            if self._is_end_of_conversation(observation['text']) or observation['episode_done']:
                 episode_done = True
-                finished_chats.add(chat)
             else:
                 pass
-
-            (remote_agent, local_agent, world) = self.chats.get(chat, (None, None, None))
-
-            if remote_agent is not None and local_agent is not None and world is not None:
-                print("Message was recognized as part of chat #%s" % chat)
-                active_chats.add(chat)
-                remote_agent.text = text
-                remote_agent.episode_done = episode_done
-                '''
-                Do message exchange between agents
-                '''
-                world.parley()
-                '''
-                Send response to server
-                '''
-                observation = remote_agent.observation
-                if self._is_end_of_conversation(observation['text']) or observation['episode_done']:
-                    finished_chats.add(chat)
-                else:
-                    pass
-                if self._is_skip_response(observation['text']):
-                    print("Skip response from agent for conversation #%s" % chat)
-                else:
-                    print("Send response from agent for conversation #%s: %s" % (chat, observation))
-                    self._send_message(observation, chat)
+            if self._is_skip_response(observation['text']):
+                print("Skip response from agent for conversation #%s" % chat)
             else:
-                print("Message wasn't recognized as part of any chat. Message skipped.")
+                print("Send response from agent for conversation #%s: %s" % (chat, observation))
+                self._send_message(observation, chat)
+        else:
+            print("Message wasn't recognized as part of any chat. Message skipped.")
 
-        '''
-        Cleanup finished chats
-        '''
-        self._cleanup_chats(finished_chats)
-        '''
-        Sleep before new pull request 
-        '''
-        print("Sleep for %s seconds before new round of conversation" % self.router_bot_pull_delay)
-        time.sleep(self.router_bot_pull_delay)
+        if episode_done:
+            self.finished_chats.add(chat)
+            self.cleanup_finished_chat(chat)
+
+    def display(self):
+        if self.chat in self.chats.keys():
+            return self.chats[self.chat][2].display()
+        else:
+            return ''
 
     def shutdown(self):
+        print("Shutdown all chats")
         for chat in self.chats.keys():
-            self.chats.pop(chat)[2].shutdown()
+            self.chats[chat][2].shutdown()
+            if chat not in self.finished_chats:
+                self._send_message({'text': '/end'}, chat)
 
     def get_chats(self):
         return self.chats.keys()
+
+    def get_finished_chats(self):
+        return self.finished_chats
 
     def get_world(self, chat):
         return self.chats[chat][2]
