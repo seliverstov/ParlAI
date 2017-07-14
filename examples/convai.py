@@ -6,7 +6,7 @@
 
 from parlai.core.params import ParlaiParser
 from parlai.agents.local_human.local_human import LocalHumanAgent
-from parlai.core.convai_world import ConvAIWorld, BaselineAgent
+from parlai.core.convai_world import ConvAIWorld, ConvAIDebugAgent
 
 
 def main():
@@ -23,7 +23,7 @@ def main():
     shared = {
         'agents': [
             {
-                'class': BaselineAgent,
+                'class': ConvAIDebugAgent,
                 'opt': opt
             }
         ]

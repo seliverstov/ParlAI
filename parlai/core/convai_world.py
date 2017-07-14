@@ -100,8 +100,14 @@ class ConvAIWorld(World):
         return message.replace('/start ', '')
 
     def _init_chat(self, chat):
+        agent_info = self.shared["agents"][0]
+        if 'opt' in agent_info.keys():
+            agent_info['opt'] = {} if agent_info['opt'] is None else agent_info['opt']
+            agent_info['opt']['convai_world'] = self
+            agent_info['opt']['convai_chat'] = chat
+
+        local_agent = create_agent_from_shared(agent_info)
         remote_agent = ConvAIAgent({'chat': chat})
-        local_agent = create_agent_from_shared(self.shared["agents"][0])
         world = DialogPartnerWorld({'task': 'ConvAI Dialog'}, [remote_agent, local_agent])
         self.chats[chat] = (remote_agent, local_agent, world)
         print("New world and agents for chat #%s created." % chat)
@@ -223,29 +229,55 @@ class ConvAIAgent(Agent):
         }
 
 
-class BaselineAgent(Agent):
+class ConvAIDebugAgent(Agent):
     def __init__(self, opt, shared=None):
         super().__init__(opt)
-        self.id = 'baselineAgent'
-        self.episodeDone = False
+        if 'convai_chat' not in opt.keys():
+            raise Exception("You must provide parameter 'convai_chat'")
+        else:
+            self.convai_chat = opt['convai_chat']
+            self.id = 'ConvAiDebugAgent#%s' % self.convai_chat
+
+        if 'convai_wold' not in opt.keys() or opt['convai_world'] is None:
+            raise Exception("You must provide parameter 'convai_world'")
+        else:
+            self.convai_world = opt['convai_world']
+
+        self.text = 'Nothing to say yet!'
+        self.episode_done = False
 
     def observe(self, observation):
         self.observation = observation
-        self.episodeDone = observation['episode_done']
+        self.episode_done = observation['episode_done']
+        text = observation['text']
+        if self.episode_done:
+            self.text = '/end'
+        elif text == "$desc":
+            self.text = "Total chats: %s\nFinished chats: %s\nCurrnet chat: %s" % (len(self.convai_world.chats), len(self.convai_world.finished_chats), self.convai_world.chat)
+        elif text == "$end":
+            self.text = "/end"
+            self.episode_done = True
+        elif text == "$ls":
+            res = []
+            for chat in self.convai_world.chats.keys():
+                status = "Finished" if chat in self.convai_world.finished_chats else "Active"
+                res.append((chat, status))
+            self.text = str(res)
+        elif text == "$cleanup":
+            self.text = str(self.convai_world.finished_chats)
+            self.convai_world.cleanup_finished_chats()
+        elif text == "$chat":
+            self.text = "Current chat id is %s" % self.convai_world.chat
+        else:
+            self.text = 'I love you, %s!' % observation['id']
+
         print(display_messages([observation]))
 
     def act(self):
-        reply = {'id': self.getID()}
-        if self.observation is None:
-            reply['text'] = 'Nothing to say yet!'
-            reply['episode_done'] = False
-        elif not self.episodeDone:
-            reply['text'] = 'I love you, %s!' % self.observation['id']
-            reply['episode_done'] = False
-        else:
-            reply['text'] = ''
-            reply['episode_done'] = True
+        reply = {
+            'id': self.getID(),
+            'text': self.text,
+            'episode_done': self.episode_done
+        }
         return reply
 
-    def episode_done(self):
-        return self.episodeDone
