@@ -229,9 +229,10 @@ class BaselineAgent(Agent):
         self.id = 'baselineAgent'
         self.episodeDone = False
 
-    def observe(self, msg):
-        self.episodeDone = msg['episode_done']
-        print(display_messages([msg]))
+    def observe(self, observation):
+        self.observation = observation
+        self.episodeDone = observation['episode_done']
+        print(display_messages([observation]))
 
     def act(self):
         reply = {'id': self.getID()}
