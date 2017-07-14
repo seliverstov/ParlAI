@@ -1,1 +1,1 @@
-web: sh run_convai.sh
+worker: sh run_convai.sh
