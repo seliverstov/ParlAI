@@ -1,0 +1,1 @@
+web: sh run_convai.sh

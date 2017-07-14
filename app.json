@@ -1,0 +1,6 @@
+{
+  "name": "Parl.AI on Heroku: Python",
+  "description": "Parl.AI instance deployed to Heroku.",
+  "image": "heroku/python",
+  "repository": "https://github.com/seliverstov/ParlAI"
+}
