@@ -6,12 +6,12 @@
 
 from parlai.core.params import ParlaiParser
 from parlai.agents.local_human.local_human import LocalHumanAgent
-from parlai.core.convai_world import ConvAIWorld
+from parlai.core.convai_world import ConvAIWorld, BaselineAgent
 
 
 def main():
     parser = ParlaiParser(True, True)
-    parser.add_argument('-n', '--num-examples', default=5)
+    parser.add_argument('-n', '--num-examples', default=500)
     parser.add_argument('-d', '--display-examples', type='bool', default=False)
     parser.add_argument('-bi', '--bot-id')
     parser.add_argument('-bc', '--bot-capacity', default=-1)
@@ -23,7 +23,7 @@ def main():
     shared = {
         'agents': [
             {
-                'class': LocalHumanAgent,
+                'class': BaselineAgent,
                 'opt': opt
             }
         ]

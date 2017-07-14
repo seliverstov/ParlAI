@@ -4,7 +4,7 @@
 # LICENSE file in the root directory of this source tree. An additional grant
 # of patent rights can be found in the PATENTS file in the same directory.
 
-from parlai.core.worlds import World, DialogPartnerWorld
+from parlai.core.worlds import World, DialogPartnerWorld, display_messages
 from parlai.core.agents import Agent, create_agent_from_shared
 
 import requests
@@ -223,3 +223,28 @@ class ConvAIAgent(Agent):
         }
 
 
+class BaselineAgent(Agent):
+    def __init__(self, opt, shared=None):
+        super().__init__(opt)
+        self.id = 'baselineAgent'
+        self.episodeDone = False
+
+    def observe(self, msg):
+        self.episodeDone = msg['episode_done']
+        print(display_messages([msg]))
+
+    def act(self):
+        reply = {'id': self.getID()}
+        if self.observation is None:
+            reply['text'] = 'Nothing to say yet!'
+            reply['episode_done'] = False
+        elif not self.episodeDone:
+            reply['text'] = 'I love you, %s!' % self.observation['id']
+            reply['episode_done'] = False
+        else:
+            reply['text'] = ''
+            reply['episode_done'] = True
+        return reply
+
+    def episode_done(self):
+        return self.episodeDone
