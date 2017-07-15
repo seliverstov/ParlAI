@@ -44,10 +44,10 @@ class ConvAIWorld(World):
 
     def _get_updates(self):
         res = requests.get(os.path.join(self.bot_url, 'getUpdates'))
-        print("GetUpdases: %s, %s, %s", res.status_code, res.text, res.json())
         if res.status_code != 200:
             print(res.text)
             res.raise_for_status()
+        print("GetUpdases: %s, %s, %s" % (res.status_code, res.text, res.json()))
         return res.json()
 
     def _send_message(self, observation, chat):
