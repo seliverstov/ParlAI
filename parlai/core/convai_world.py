@@ -105,10 +105,11 @@ class ConvAIWorld(World):
 
     def _init_chat(self, chat):
         agent_info = self.shared["agents"][0]
-        if 'opt' in agent_info.keys():
-            agent_info['opt'] = {} if agent_info['opt'] is None else agent_info['opt']
-            agent_info['opt']['convai_world'] = self
-            agent_info['opt']['convai_chat'] = chat
+        
+        if 'opt' not in agent_info.keys() or agent_info['opt'] is None:
+            agent_info['opt'] = {}
+        agent_info['opt']['convai_world'] = self
+        agent_info['opt']['convai_chat'] = chat
 
         local_agent = create_agent_from_shared(agent_info)
         remote_agent = ConvAIAgent({'chat': chat})
@@ -159,6 +160,9 @@ class ConvAIWorld(World):
 
     def parley(self):
         print("\n" + "-" * 100 + "\nParley\n"+"-"*100+"\n")
+
+        #self.cleanup_finished_chats()
+
         if len(self.messages) == 0:
             self.pull_new_messages()
 
@@ -192,7 +196,7 @@ class ConvAIWorld(World):
 
         if episode_done:
             self.finished_chats.add(chat)
-            self.cleanup_finished_chat(chat)
+
 
     def display(self):
         if self.chat in self.chats.keys():
@@ -242,7 +246,7 @@ class ConvAIDebugAgent(Agent):
             self.convai_chat = opt['convai_chat']
             self.id = 'ConvAiDebugAgent#%s' % self.convai_chat
 
-        if 'convai_wold' not in opt.keys() or opt['convai_world'] is None:
+        if 'convai_world' not in opt.keys() or opt['convai_world'] is None:
             raise Exception("You must provide parameter 'convai_world'")
         else:
             self.convai_world = opt['convai_world']
