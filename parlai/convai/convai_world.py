@@ -14,13 +14,14 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-from parlai.core.worlds import World, DialogPartnerWorld, display_messages
+from parlai.core.worlds import World, DialogPartnerWorld
 from parlai.core.agents import Agent, create_agent_from_shared
 
 import requests
 import os
 import json
 import time
+
 
 class ConvAIWorld(World):
     """
@@ -60,7 +61,7 @@ class ConvAIWorld(World):
 
     def _get_updates(self):
         """
-        Request Router Bot for new messages
+        Make HTTP request to Router Bot for new messages
         :return: list of new messages received since last request
         """
         res = requests.get(os.path.join(self.bot_url, 'getUpdates'))
@@ -71,8 +72,8 @@ class ConvAIWorld(World):
 
     def _send_message(self, observation, chat):
         """
-        Send response to Router Bot
-        :param observation: response
+        Make HTTP request to Router Bot to post new message
+        :param observation: message that will be sent to server
         :param chat: id of chat
         :return: None
         """
@@ -138,6 +139,7 @@ class ConvAIWorld(World):
         """
         agent_info = self.shared["agents"][0]
         
+        # Add refs to current world instance and chat id to agent 'opt' parameter
         if 'opt' not in agent_info.keys() or agent_info['opt'] is None:
             agent_info['opt'] = {}
         agent_info['opt']['convai_world'] = self
@@ -150,18 +152,32 @@ class ConvAIWorld(World):
         return self.chats[chat]
 
     def cleanup_finished_chat(self, chat):
+        """
+        Shutdown specified chat and remove it from lists
+        :param chat: chat id
+        :return: None
+        """
         if chat in self.finished_chats:
             self.chats.pop(chat, None)[2].shutdown()
             self.finished_chats.remove(chat)
-            print("Chat #%s is ended and corresponding agent is removed." % chat)
-        else:
-            pass
 
     def cleanup_finished_chats(self):
+        """
+        Shutdown all finished chats and remove them from lists
+        :return: None
+        """
         for chat in self.finished_chats.copy():
             self.cleanup_finished_chat(chat)
 
     def pull_new_messages(self):
+        """
+        Requests server for new messages and processes every message.
+        If message starts with '/start' then will create new chat and adds message to stack.
+        If message has same id as already existing chat then will add to message stack.
+        Other messages will be ignored.
+        If after processing all messages message stack is still empty then new request to server will be performed.
+        :return: None
+        """
         print("Wait for new messages from server", end="", flush=True)
         while True:
             time.sleep(self.router_bot_pull_delay)
@@ -193,6 +209,12 @@ class ConvAIWorld(World):
                     print("Wait for new messages from server", end="", flush=True)
 
     def parley(self):
+        """
+        Pops next message from stack, gets corresponding chat, agents, world and performs communication between agents.
+        Result of communication will be send to server.
+        If message stack is empty then server will be requested for new messages.
+        :return: None
+        """
         print("Try to cleanup finished chat before new parley.")
         self.cleanup_finished_chats()
 
@@ -210,10 +232,8 @@ class ConvAIWorld(World):
             self.chat = chat
             remote_agent.text = text
             remote_agent.episode_done = episode_done
-            print("\n" + "-" * 100)
             print("Parley:")
             world.parley()
-            print("-" * 100 + "\n")
             observation = remote_agent.observation
             if self._is_end_of_conversation(observation['text']) or observation['episode_done']:
                 episode_done = True
@@ -236,7 +256,6 @@ class ConvAIWorld(World):
             return ''
 
     def shutdown(self):
-        print("Shutdown all chats")
         for chat in self.chats.keys():
             self.chats[chat][2].shutdown()
             if chat not in self.finished_chats:
@@ -266,7 +285,3 @@ class ConvAIAgent(Agent):
             'text': self.text,
             'episode_done': self.episode_done
         }
-
-
-
-
