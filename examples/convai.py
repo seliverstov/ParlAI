@@ -110,7 +110,7 @@ class ConvAIDebugAgent(Agent):
             self.text = texts[random.randint(0, 7)]
             if self.text != '/end':
                 self.text = "%s : %s" % (self.bot_id[:7], self.text)
-        print(display_messages([observation]))
+        print("\t"+display_messages([observation]))
 
     def act(self):
         reply = {
@@ -118,7 +118,7 @@ class ConvAIDebugAgent(Agent):
             'text': self.text,
             'episode_done': self.episode_done
         }
-        print(display_messages([reply]))
+        print("\t"+display_messages([reply]))
         return reply
 
 if __name__ == '__main__':
