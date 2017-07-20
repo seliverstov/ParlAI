@@ -1,8 +1,18 @@
-# Copyright (c) 2017-present, Facebook, Inc.
-# All rights reserved.
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree. An additional grant
-# of patent rights can be found in the PATENTS file in the same directory.
+"""
+Copyright 2017 Neural Networks and Deep Learning lab, MIPT
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+"""
 
 from parlai.core.worlds import World, DialogPartnerWorld, display_messages
 from parlai.core.agents import Agent, create_agent_from_shared
@@ -14,35 +24,46 @@ import time
 
 
 class ConvAIWorld(World):
-    """This world send messages from agents (client bots)  back and forth to ConvAI Master Bot.
-    Agents created dynamically from shared data when new conversation is started. Each agent conducts one conversation.
+    """
+    ConvAIWorld provides conversations with participants in the convai.io competition.
+    It creates a new DialogPartnerWorld for each new conversation.
+    Each DialogPartnerWorld populated with two new instances of agents: ConvAIAgent and yours local agent.
+    Information about yours agent should be provided via 'shared' parameter. Agents from 'agents' parameter are ignored.
     """
 
     def __init__(self, opt, agents, shared=None):
         super().__init__(opt)
 
         if shared is None:
-            raise RuntimeError("Agents should be provide via 'shared' parameter")
+            raise RuntimeError("Agents should be provided via 'shared' parameter")
 
         self.shared = shared
+        # Current chat id
         self.chat = None
+        # All active and finished (but not cleared yet) chats
         self.chats = {}
+        # Finished chats
         self.finished_chats = set()
+        # Pool of messages from RouterBot
         self.messages = []
-
+        # Url of RouterBot
         self.router_bot_url = opt.get('router_bot_url')
-
+        # Delay before new request to RouterBot: minimum 1 sec
         self.router_bot_pull_delay = int(opt.get('router_bot_pull_delay'))
         if self.router_bot_pull_delay < 1:
             self.router_bot_pull_delay = 1
-
+        # Id of local bot used to communicate with RouterBot
         self.bot_id = opt.get('bot_id')
-
+        # The maximum number of open dialogs. Use -1 for unlimited number of open dialogs
         self.bot_capacity = int(opt.get('bot_capacity'))
-
+        # RouterBot url with current bot id
         self.bot_url = os.path.join(self.router_bot_url, self.bot_id)
 
     def _get_updates(self):
+        """
+        Request Router Bot for new messages
+        :return: list of new messages received since last request
+        """
         res = requests.get(os.path.join(self.bot_url, 'getUpdates'))
         if res.status_code != 200:
             print(res.text)
@@ -51,6 +72,12 @@ class ConvAIWorld(World):
         return res.json()
 
     def _send_message(self, observation, chat):
+        """
+        Send response to Router Bot
+        :param observation: response
+        :param chat: id of chat
+        :return: None
+        """
         if self._is_end_of_conversation(observation['text']):
             data = {
                 'text': '/end',
@@ -104,6 +131,13 @@ class ConvAIWorld(World):
         return message.replace('/start ', '')
 
     def _init_chat(self, chat):
+        """
+        Create new chat for new dialog. Chat consists of new instance of ConvAIAgent,
+        new instance of your own Agent and new instance DialogPartnerWorld where this two agents
+        will communicate. Information about class of your local agent getting from shared data.
+        :param chat: chat id
+        :return: tuple with instances of ConvAIAgent, your local agent, DialogPartnerWorld
+        """
         agent_info = self.shared["agents"][0]
         
         if 'opt' not in agent_info.keys() or agent_info['opt'] is None:
@@ -141,18 +175,18 @@ class ConvAIWorld(World):
                     chat = self._get_chat_id(msg)
 
                     if self.chats.get(chat, None) is not None:
-                        print("Message recognized as part of chat #%s" % chat)
+                        print("\tMessage recognized as part of chat #%s" % chat)
                         self.messages.append((chat, text))
                     elif self._is_begin_of_conversation(text):
-                        print("Message recognised as start of new conversation #%s" % chat)
+                        print("\tMessage recognised as start of new conversation #%s" % chat)
                         if self.bot_capacity == -1 or 0 <= self.bot_capacity > (len(self.chats) - len(self.finished_chats)):
                             self._init_chat(chat)
                             text = self._strip_start_message(text)
                             self.messages.append((chat, text))
                         else:
-                            print("Can't start new conversation #%s due to bot capacity limit reached." % chat)
+                            print("\tCan't start new conversation #%s due to bot capacity limit reached." % chat)
                     else:
-                        print("Message wasn't recognized as part of any chat. Message skipped.")
+                        print("\tMessage wasn't recognized as part of any chat. Message skipped.")
                 if len(self.messages) > 0:
                     break
             print("No new messages. Sleep for %s seconds before new try." % self.router_bot_pull_delay)
@@ -161,7 +195,7 @@ class ConvAIWorld(World):
     def parley(self):
         print("\n" + "-" * 100 + "\nParley\n"+"-"*100+"\n")
 
-        #self.cleanup_finished_chats()
+        self.cleanup_finished_chats()
 
         if len(self.messages) == 0:
             self.pull_new_messages()
@@ -196,7 +230,6 @@ class ConvAIWorld(World):
 
         if episode_done:
             self.finished_chats.add(chat)
-
 
     def display(self):
         if self.chat in self.chats.keys():
@@ -237,55 +270,5 @@ class ConvAIAgent(Agent):
         }
 
 
-class ConvAIDebugAgent(Agent):
-    def __init__(self, opt, shared=None):
-        super().__init__(opt)
-        if 'convai_chat' not in opt.keys():
-            raise Exception("You must provide parameter 'convai_chat'")
-        else:
-            self.convai_chat = opt['convai_chat']
-            self.id = 'ConvAiDebugAgent#%s' % self.convai_chat
 
-        if 'convai_world' not in opt.keys() or opt['convai_world'] is None:
-            raise Exception("You must provide parameter 'convai_world'")
-        else:
-            self.convai_world = opt['convai_world']
-
-        self.text = 'Nothing to say yet!'
-        self.episode_done = False
-
-    def observe(self, observation):
-        self.observation = observation
-        self.episode_done = observation['episode_done']
-        text = observation['text']
-        if self.episode_done:
-            self.text = '/end'
-        elif text == "$desc":
-            self.text = "Total chats: %s\nFinished chats: %s\nCurrnet chat: %s" % (len(self.convai_world.chats), len(self.convai_world.finished_chats), self.convai_world.chat)
-        elif text == "$end":
-            self.text = "/end"
-            self.episode_done = True
-        elif text == "$ls":
-            res = []
-            for chat in self.convai_world.chats.keys():
-                status = "Finished" if chat in self.convai_world.finished_chats else "Active"
-                res.append((chat, status))
-            self.text = str(res)
-        elif text == "$cleanup":
-            self.text = str(self.convai_world.finished_chats)
-            self.convai_world.cleanup_finished_chats()
-        elif text == "$chat":
-            self.text = "Current chat id is %s" % self.convai_world.chat
-        else:
-            self.text = 'I love you, %s!' % observation['id']
-
-        print(display_messages([observation]))
-
-    def act(self):
-        reply = {
-            'id': self.getID(),
-            'text': self.text,
-            'episode_done': self.episode_done
-        }
-        return reply
 
