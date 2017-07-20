@@ -44,10 +44,13 @@ def main():
     world = ConvAIWorld(opt, None, shared)
 
     while True:
-        world.parley()
-        if opt['display_examples']:
-            print("---")
-            print(world.display() + "\n~~")
+        try:
+            world.parley()
+            if opt['display_examples']:
+                print("---")
+                print(world.display() + "\n~~")
+        except Exception as e:
+            print("Exception: {}".format(e))
 
 
 class ConvAIDebugAgent(Agent):
