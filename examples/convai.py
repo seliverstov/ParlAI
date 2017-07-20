@@ -28,7 +28,7 @@ def main():
     parser.add_argument('-bi', '--bot-id')
     parser.add_argument('-bc', '--bot-capacity', default=-1)
     parser.add_argument('-rbu', '--router-bot-url')
-    parser.add_argument('-rbpd', '--router-bot-pull-delay', default=5)
+    parser.add_argument('-rbpd', '--router-bot-pull-delay', default=1)
     opt = parser.parse_args()
     print(opt)
 
@@ -107,8 +107,9 @@ class ConvAIDebugAgent(Agent):
                 'Hello',
                 "This is not very interesting. Let's change the subject of the conversation. For example, let's talk about cats. What do you think?",
                 '/end']
-            self.text = "%s : %s" % (self.bot_id[:7], texts[random.randint(0, 7)])
-
+            self.text = texts[random.randint(0, 7)]
+            if self.text != '/end':
+                self.text = "%s : %s" % (self.bot_id[:7], self.text)
         print(display_messages([observation]))
 
     def act(self):
@@ -117,6 +118,7 @@ class ConvAIDebugAgent(Agent):
             'text': self.text,
             'episode_done': self.episode_done
         }
+        print(display_messages([reply]))
         return reply
 
 if __name__ == '__main__':

@@ -68,7 +68,6 @@ class ConvAIWorld(World):
         if res.status_code != 200:
             print(res.text)
             res.raise_for_status()
-        print("GetUpdases: %s, %s, %s" % (res.status_code, res.text, res.json()))
         return res.json()
 
     def _send_message(self, observation, chat):
@@ -149,7 +148,6 @@ class ConvAIWorld(World):
         remote_agent = ConvAIAgent({'chat': chat})
         world = DialogPartnerWorld({'task': 'ConvAI Dialog'}, [remote_agent, local_agent])
         self.chats[chat] = (remote_agent, local_agent, world)
-        print("New world and agents for chat #%s created." % chat)
         return self.chats[chat]
 
     def cleanup_finished_chat(self, chat):
@@ -175,18 +173,19 @@ class ConvAIWorld(World):
                     chat = self._get_chat_id(msg)
 
                     if self.chats.get(chat, None) is not None:
-                        print("\tMessage recognized as part of chat #%s" % chat)
+                        print("Message was recognized as part of chat #%s" % chat)
                         self.messages.append((chat, text))
                     elif self._is_begin_of_conversation(text):
-                        print("\tMessage recognised as start of new conversation #%s" % chat)
+                        print("Message was recognised as start of new chat #%s" % chat)
                         if self.bot_capacity == -1 or 0 <= self.bot_capacity > (len(self.chats) - len(self.finished_chats)):
                             self._init_chat(chat)
                             text = self._strip_start_message(text)
                             self.messages.append((chat, text))
+                            print("New world and agents for chat #%s created." % chat)
                         else:
-                            print("\tCan't start new conversation #%s due to bot capacity limit reached." % chat)
+                            print("Can't start new chat #%s due to bot capacity limit reached." % chat)
                     else:
-                        print("\tMessage wasn't recognized as part of any chat. Message skipped.")
+                        print("Message wasn't recognized as part of any chat. Message skipped.")
                 if len(self.messages) > 0:
                     break
             print("No new messages. Sleep for %s seconds before new try." % self.router_bot_pull_delay)
@@ -195,10 +194,14 @@ class ConvAIWorld(World):
     def parley(self):
         print("\n" + "-" * 100 + "\nParley\n"+"-"*100+"\n")
 
+        print("Try to cleanup finished chat before new parley.")
         self.cleanup_finished_chats()
 
         if len(self.messages) == 0:
+            print("Message stack is empty. Try to request new messages from server.")
             self.pull_new_messages()
+
+        print("Pop next message from stack")
 
         (chat, text) = self.messages.pop(0)
         episode_done = self._is_end_of_conversation(text)
@@ -208,22 +211,16 @@ class ConvAIWorld(World):
             self.chat = chat
             remote_agent.text = text
             remote_agent.episode_done = episode_done
-            '''
-            Do message exchange between agents
-            '''
+            print("Do message exchange between agents")
             world.parley()
-            '''
-            Send response to server
-            '''
             observation = remote_agent.observation
             if self._is_end_of_conversation(observation['text']) or observation['episode_done']:
                 episode_done = True
-            else:
-                pass
+
             if self._is_skip_response(observation['text']):
-                print("Skip response from agent for conversation #%s" % chat)
+                print("Skip response from agent for chat #%s" % chat)
             else:
-                print("Send response from agent for conversation #%s: %s" % (chat, observation))
+                print("Send response from agent to chat #%s: %s" % (chat, observation))
                 self._send_message(observation, chat)
         else:
             print("Message wasn't recognized as part of any chat. Message skipped.")
