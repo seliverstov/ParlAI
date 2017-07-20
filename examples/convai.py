@@ -54,7 +54,7 @@ def main():
 
 
 class ConvAIDebugAgent(Agent):
-    def __init__(self, opt):
+    def __init__(self, opt, shared=None):
         super().__init__(opt)
         if 'bot_id' not in opt.keys():
             raise Exception("You must provide parameter 'bot_id'")
