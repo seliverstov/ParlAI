@@ -22,52 +22,21 @@ from parlai.core.worlds import display_messages
 import random
 
 
-def main():
-    parser = ParlaiParser(True, True)
-    parser.add_argument('-d', '--display-examples', type='bool', default=False)
-    parser.add_argument('-bi', '--bot-id')
-    parser.add_argument('-bc', '--bot-capacity', default=-1)
-    parser.add_argument('-rbu', '--router-bot-url')
-    parser.add_argument('-rbpd', '--router-bot-pull-delay', default=1)
-    opt = parser.parse_args()
-    print(opt)
-
-    shared = {
-        'agents': [
-            {
-                'class': ConvAIDebugAgent,
-                'opt': opt
-            }
-        ]
-    }
-
-    world = ConvAIWorld(opt, None, shared)
-
-    while True:
-        try:
-            world.parley()
-            if opt['display_examples']:
-                print("---")
-                print(world.display() + "\n~~")
-        except Exception as e:
-            print("Exception: {}".format(e))
-
-
 class ConvAIDebugAgent(Agent):
     def __init__(self, opt, shared=None):
         super().__init__(opt)
-        if 'bot_id' not in opt.keys():
+        if 'bot_id' not in opt:
             raise Exception("You must provide parameter 'bot_id'")
         else:
             self.bot_id = opt['bot_id']
 
-        if 'convai_chat' not in opt.keys():
+        if 'convai_chat' not in opt:
             raise Exception("You must provide parameter 'convai_chat'")
         else:
             self.convai_chat = opt['convai_chat']
             self.id = 'ConvAiDebugAgent#%s' % self.convai_chat
 
-        if 'convai_world' not in opt.keys() or opt['convai_world'] is None:
+        if 'convai_world' not in opt or opt['convai_world'] is None:
             raise Exception("You must provide parameter 'convai_world'")
         else:
             self.convai_world = opt['convai_world']
@@ -120,6 +89,34 @@ class ConvAIDebugAgent(Agent):
         }
         print("\t"+display_messages([reply]))
         return reply
+
+
+def main():
+    parser = ParlaiParser(True, True)
+    parser.add_argument('-bi', '--bot-id')
+    parser.add_argument('-bc', '--bot-capacity', default=-1)
+    parser.add_argument('-rbu', '--router-bot-url')
+    parser.add_argument('-rbpd', '--router-bot-pull-delay', default=1)
+    opt = parser.parse_args()
+    print(opt)
+
+    shared = {
+        'agents': [
+            {
+                'class': ConvAIDebugAgent,
+                'opt': opt
+            }
+        ]
+    }
+
+    world = ConvAIWorld(opt, None, shared)
+
+    while True:
+        try:
+            world.parley()
+        except Exception as e:
+            print("Exception: {}".format(e))
+
 
 if __name__ == '__main__':
     main()
