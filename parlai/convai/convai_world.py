@@ -21,8 +21,6 @@ import requests
 import os
 import json
 import time
-import logging
-
 
 class ConvAIWorld(World):
     """
@@ -34,12 +32,6 @@ class ConvAIWorld(World):
 
     def __init__(self, opt, agents, shared=None):
         super().__init__(opt)
-
-        self.logger = logging.getLogger(__name__)
-        handler = logging.StreamHandler()
-        handler.setLevel(logging.DEBUG)
-        self.logger.setLevel(logging.DEBUG)
-        self.logger.addHandler(handler)
 
         if shared is None:
             raise RuntimeError("Agents should be provided via 'shared' parameter")
@@ -73,7 +65,7 @@ class ConvAIWorld(World):
         """
         res = requests.get(os.path.join(self.bot_url, 'getUpdates'))
         if res.status_code != 200:
-            self.logger.error(res.text)
+            print(res.text)
             res.raise_for_status()
         return res.json()
 
@@ -109,7 +101,7 @@ class ConvAIWorld(World):
 
         res = requests.post(os.path.join(self.bot_url, 'sendMessage'), json=message, headers=headers)
         if res.status_code != 200:
-            self.logger.error(res.text)
+            print(res.text)
             res.raise_for_status()
 
     @staticmethod
@@ -161,7 +153,7 @@ class ConvAIWorld(World):
         if chat in self.finished_chats:
             self.chats.pop(chat, None)[2].shutdown()
             self.finished_chats.remove(chat)
-            self.logger.debug("Chat #%s is ended and corresponding agent is removed." % chat)
+            print("Chat #%s is ended and corresponding agent is removed." % chat)
         else:
             pass
 
@@ -177,38 +169,38 @@ class ConvAIWorld(World):
             msgs = self._get_updates()
             if len(msgs) > 0:
                 for msg in msgs:
-                    self.logger.debug("\nProceed message: %s" % msg)
+                    print("\nProceed message: %s" % msg)
                     text = self._get_message_text(msg)
                     chat = self._get_chat_id(msg)
 
                     if self.chats.get(chat, None) is not None:
-                        self.logger.debug("Message was recognized as part of chat #%s" % chat)
+                        print("Message was recognized as part of chat #%s" % chat)
                         self.messages.append((chat, text))
                     elif self._is_begin_of_conversation(text):
-                        self.logger.debug("Message was recognised as start of new chat #%s" % chat)
+                        print("Message was recognised as start of new chat #%s" % chat)
                         if self.bot_capacity == -1 or 0 <= self.bot_capacity > (len(self.chats) - len(self.finished_chats)):
                             self._init_chat(chat)
                             text = self._strip_start_message(text)
                             self.messages.append((chat, text))
-                            self.logger.debug("New world and agents for chat #%s created." % chat)
+                            print("New world and agents for chat #%s created." % chat)
                         else:
-                            self.logger.debug("Can't start new chat #%s due to bot capacity limit reached." % chat)
+                            print("Can't start new chat #%s due to bot capacity limit reached." % chat)
                     else:
-                        self.logger.debug("Message wasn't recognized as part of any chat. Message skipped.")
+                        print("Message wasn't recognized as part of any chat. Message skipped.")
                 if len(self.messages) > 0:
                     break
                 else:
                     print("Wait for new messages from server", end="", flush=True)
 
     def parley(self):
-        self.logger.debug("Try to cleanup finished chat before new parley.")
+        print("Try to cleanup finished chat before new parley.")
         self.cleanup_finished_chats()
 
         if len(self.messages) == 0:
-            self.logger.debug("Message stack is empty. Try to request new messages from server.")
+            print("Message stack is empty. Try to request new messages from server.")
             self.pull_new_messages()
 
-            self.logger.debug("Pop next message from stack")
+        print("Pop next message from stack")
 
         (chat, text) = self.messages.pop(0)
         episode_done = self._is_end_of_conversation(text)
@@ -227,12 +219,12 @@ class ConvAIWorld(World):
                 episode_done = True
 
             if self._is_skip_response(observation['text']):
-                self.logger.debug("Skip response from agent for chat #%s" % chat)
+                print("Skip response from agent for chat #%s" % chat)
             else:
-                self.logger.debug("Send response from agent to chat #%s: %s" % (chat, observation))
+                print("Send response from agent to chat #%s: %s" % (chat, observation))
                 self._send_message(observation, chat)
         else:
-            self.logger.debug("Message wasn't recognized as part of any chat. Message skipped.")
+            print("Message wasn't recognized as part of any chat. Message skipped.")
 
         if episode_done:
             self.finished_chats.add(chat)
@@ -244,7 +236,7 @@ class ConvAIWorld(World):
             return ''
 
     def shutdown(self):
-        self.logger.debug("Shutdown all chats")
+        print("Shutdown all chats")
         for chat in self.chats.keys():
             self.chats[chat][2].shutdown()
             if chat not in self.finished_chats:
