@@ -15,10 +15,11 @@ limitations under the License.
 """
 
 from parlai.convai.convai_world import ConvAIWorld
+from parlai.core.params import ParlaiParser
 from parlai.core.agents import Agent
 from parlai.core.worlds import display_messages
 
-import my_search
+# import my_search
 
 class KoreanBot(Agent):
     def __init__(self, opt, shared=None):
@@ -33,7 +34,7 @@ class KoreanBot(Agent):
         if self.episode_done:
             self.text = '/end'
         else:
-            self.text = my_search.search(self.observation['text'])
+            self.text = "123" # "my_search.search(self.observation['text'])
             if self.text == "":
                 self.text = "speak again?"
         print("\t"+display_messages([observation]))
@@ -49,12 +50,12 @@ class KoreanBot(Agent):
 
 
 def main():
-    opt = {
-        'bot_id': "0A36119D-E6C0-4022-962F-5B5BDF21FD97",
-        'bot_capacity': -1,
-        'router_bot_url': 'https://ipavlov.mipt.ru/nipsrouter/',
-        'router_bot_pull_delay': 1
-    }
+    parser = ParlaiParser(True, True)
+    opt = parser.parse_args()
+    opt['bot_id'] = "0A36119D-E6C0-4022-962F-5B5BDF21FD97"
+    opt['bot_capacity'] = -1
+    opt['router_bot_url'] = 'https://ipavlov.mipt.ru/nipsrouter/'
+    opt['router_bot_pull_delay'] = 1
 
     print(opt)
 
